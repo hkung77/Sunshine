@@ -1,8 +1,12 @@
 package com.example.henry.sunshine.app;
 
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.support.v4.app.Fragment;
 import android.text.format.Time;
 import android.util.Log;
@@ -12,8 +16,11 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Adapter;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
+import android.widget.Toast;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -53,27 +60,33 @@ public class ForecastFragment extends Fragment {
     public boolean onOptionsItemSelected(MenuItem item) {
         int id = item.getItemId();
         if (id == R.id.action_refresh) {
-            new FetchWeatherTask().execute("94043");
+            FetchWeatherTask weatherTask = new FetchWeatherTask();
+            SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+            String location = prefs.getString(getString(R.string.pref_location_key),
+                    getString(R.string.pref_location_default));
+            weatherTask.execute(location);
             return true;
         }
         return super.onOptionsItemSelected(item);
     }
 
+    private void updateWeather(){
+        FetchWeatherTask weatherTask = new FetchWeatherTask();
+        SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String location = prefs.getString(getString(R.string.pref_location_key),
+                getString(R.string.pref_location_default));
+        weatherTask.execute(location);
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        updateWeather();
+    }
     @Override
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-
-        //Populate the week with days.
-        String[] week_temp =
-                { "Monday - Cloudy - 200",
-                        "Tuesday - Cloudy - 100",
-                        "Wednesday - Cloudy - 100",
-                        "Thursday - Cloudy - 100",
-                        "Friday - Cloudy - 100",
-                        "Saturday - Cloudy - 100",
-                        "Sunday - Cloudy - 100" };
-        List<String> data = new ArrayList<String>(Arrays.asList(week_temp));
 
         //
         forecast_adapter = new ArrayAdapter<String>(
@@ -84,10 +97,19 @@ public class ForecastFragment extends Fragment {
                 // ID of the text view to populate
                 R.id.list_item_forecast_textview,
                 // forecast data
-                data);
+                new ArrayList<String>());
 
         ListView listView = (ListView) rootView.findViewById(R.id.listview_forecast);
         listView.setAdapter(forecast_adapter);
+
+        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+            public void onItemClick(AdapterView<?> AdapterView, View view, int i, long l) {
+                String forecast = forecast_adapter.getItem(i);
+                Intent intent = new Intent(getActivity(), DetailActivity.class)
+                        .putExtra(Intent.EXTRA_TEXT, forecast);
+                startActivity(intent);
+            }
+        });
 
         return rootView;
     }
@@ -107,6 +129,7 @@ public class ForecastFragment extends Fragment {
             String units = "metric";
             String numDays = "7";
             String POSTAL_CODE = params[0];
+            System.out.println(POSTAL_CODE);
             // Will contain the raw JSON response as a String
             String forecast_JSON_string = null;
 
@@ -152,8 +175,6 @@ public class ForecastFragment extends Fragment {
                 }
                 // The string is stored here
                 forecast_JSON_string = buffer.toString();
-                Log.v(LOG_TAG,"Forecast JSON String" + forecast_JSON_string);
-
                 String[] data = getWeatherDataFromJson(forecast_JSON_string,7);
                 // System.out.println(week_forecast);
                 return data;
@@ -206,6 +227,19 @@ public class ForecastFragment extends Fragment {
          */
         private String formatHighLows(double high, double low) {
             // For presentation, assume the user doesn't care about tenths of a degree.
+
+            SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+            String unit_type = pref.getString(
+                    getString(R.string.pref_units_key),
+                    getString(R.string.pref_units_metric)
+            );
+
+            if (unit_type.equals(getString(R.string.pref_units_imperial))) {
+                high = (high*1.8)+32;
+                low = (low*1.8)+32;
+            } else if (!unit_type.equals(getString(R.string.pref_units_metric))) {
+                Log.d(LOG_TAG, "Unit type not found" + unit_type);
+            }
             long roundedHigh = Math.round(high);
             long roundedLow = Math.round(low);
 
@@ -281,10 +315,6 @@ public class ForecastFragment extends Fragment {
 
                 highAndLow = formatHighLows(high, low);
                 resultStrs[i] = day + " - " + description + " - " + highAndLow;
-            }
-
-            for (String s : resultStrs) {
-                Log.v(LOG_TAG, "Forecast entry: " + s);
             }
             return resultStrs;
         }
